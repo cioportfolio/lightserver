@@ -1,0 +1,19 @@
+version: "2"
+services:
+  node:
+    image: "node:12"
+    user: "node"
+    working_dir: /home/node/app
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - ./:/home/node/app
+    stdin_open: true
+    tty: true
+    ports:
+      - "8080:8080"
+      - "8001:8001"
+    command: bash -c "
+      npm i
+      && npm run start &
+      bash"

@@ -1,0 +1,20 @@
+{
+  "name": "lightserver",
+  "version": "0.0.1",
+  "description": "Spotify disco light server",
+  "scripts": {
+    "start": "nodemon ./index.js"
+  },
+  "author": "Richard Barton",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.16.4",
+    "querystring": "^0.2.0",
+    "dotenv": "^7.0.0",
+    "spotify-web-api-node": "^4.0.0",
+    "request": "^2.88.0"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.4"
+  }
+}
