@@ -1,4 +1,6 @@
 require('dotenv').config()
+const SerialPort = require('serialport')
+const Readline = require('@serialport/parser-readline')
 const express = require('express')
 const querystring = require('querystring')
 const request = require('request')
@@ -17,8 +19,11 @@ const port = process.env.PORT || 8001
 var track_id = ''
 var analysis = { not: "started" }
 var token = ''
-var playing = {not: "started"}
+var playing = { not: "started" }
 var progress = 0
+var lastProgress = 0
+var arduino = ''
+var apiTime = Date.now();
 
 if (process.env.NODE_ENV === 'development') {
     app.use((req, res, next) => {
@@ -28,28 +33,67 @@ if (process.env.NODE_ENV === 'development') {
     })
 }
 
+const ash = callback =>
+    (req, res, next) => {
+        Promise.resolve(callback(req, res, next)).catch(next)
+    }
+
 //app.use(express.static('public'))
 
-function details() {
+async function details() {
+    var trackDetails = '<p> Not currently playing!'
+    var portDetails = `<p> Port: ${arduino}`
+    if (!arduino) {
+        const portList = await SerialPort.list()
+        const portMenu = portList.map((p, i) => `<p><a href="/port/${i}">${p.path}</a> - ${p.manufacturer}`).join('')
+        portDetails = `<p> Select a serial port:
+            ${portMenu}
+        `
+    }
+    if (playing) {
+        trackDetails = `
+            <p> Now playing: 
+            <p> ID: ${playing.id}
+            <p> Artist(s): ${playing.artists.map(a => a.name).join()}
+            <p> Track: ${playing.name}
+            <p> Tempo: ${analysis.track.tempo}
+            <p> Progress: ${progress}
+            <p> Next bar in: ${analysis.bars.filter(b => (b.start * 1000 > progress))[0].start * 1000 - progress}
+            <p> Next section in: ${analysis.sections.filter(b => (b.start * 1000 > progress))[0].start * 1000 - progress}
+            <p> Next segment in: ${analysis.segments.filter(b => (b.start * 1000 > progress))[0].start * 1000 - progress}
+            <p> Next tatum in: ${analysis.tatums.filter(b => (b.start * 1000 > progress))[0].start * 1000 - progress}
+            <p> Next beat in: ${analysis.beats.filter(b => (b.start * 1000 > progress))[0].start * 1000 - progress}
+        `
+    }
     return `
-        <a href='/'>Reset</a>
-        <p> Now playing: 
-        <p> ID: ${playing.id}
-        <p> Artist(s): ${playing.artists.map(a => a.name).join()}
-        <p> Track: ${playing.name}
-        <p> Tempo: ${analysis.track.tempo}
-        <p> Progress: ${progress}
-        <p> Next bar in: ${analysis.bars.filter(b=>(b.start*1000 > progress))[0].start*1000 - progress}
-        <p> Next section in: ${analysis.sections.filter(b=>(b.start*1000 > progress))[0].start*1000 - progress}
-        <p> Next segment in: ${analysis.segments.filter(b=>(b.start*1000 > progress))[0].start*1000 - progress}
-        <p> Next tatum in: ${analysis.tatums.filter(b=>(b.start*1000 > progress))[0].start*1000 - progress}
-        <p> Next beat in: ${analysis.beats.filter(b=>(b.start*1000 > progress))[0].start*1000 - progress}
+        <a href='/'>Refresh</a>
+        ${portDetails}
+        ${trackDetails}
+        <pre> ${JSON.stringify(analysis, null, 2)} </pre>
     `
     //        <pre> ${JSON.stringify(analysis, null, 2)} </pre>
 
 }
 
-app.get('/', (req, res, next) => {
+async function updateMusic() {
+    const currentTime = Date.now()
+    if (currentTime - apiTime < 1000) {
+        progress = currentTime - apiTime + lastProgress
+    } else {
+        apiTime = currentTime
+        const trackData = await spotifyApi.getMyCurrentPlaybackState({})
+        playing = trackData.body.item
+        lastProgress = trackData.body.progress_ms
+        progress = lastProgress
+        if (playing && track_id != playing.id) {
+            track_id = playing.id
+            const analData = await spotifyApi.getAudioAnalysisForTrack(playing.id)
+            analysis = analData.body
+        }    
+    }
+}
+
+app.get('/', ash(async (req, res) => {
     if (!token) {
         const query = querystring.stringify({
             response_type: 'code',
@@ -57,34 +101,25 @@ app.get('/', (req, res, next) => {
             scope: 'user-read-playback-state',
             redirect_uri: process.env.REDIRECT_URI
         })
-
         res.redirect('https://accounts.spotify.com/authorize?' + query)
     } else {
-        spotifyApi.getMyCurrentPlaybackState({
-        })
-            .then(function (data) {
-                // Output items
-                playing = data.body.item
-                progress = data.body.progress_ms
-                if (track_id != playing.id) {
-                    track_id = playing.id
-                    spotifyApi.getAudioAnalysisForTrack(playing.id)
-                        .then(function (data) {
-                            analysis = data.body
-                            res.send(details())
-                        }, function (err) {
-                            console.log('Something went wrong!', err);
-                        });
-                } else {
-                    res.send(details())
-                }
-            }, function (err) {
-                console.log('Something went wrong!', err);
-            });
+        await updateMusic()
+        res.send(await details())
     }
-})
+}))
 
-app.get('/callback', (req, res) => {
+const asRequest = (options) =>
+    new Promise((resolve, reject) => {
+        request.post(options, (error, response, body) => {
+            if (error)
+                return reject(error)
+            if (response.statusCode === 200)
+                return resolve({ ok: 1, body: body })
+            return resolve({ ok: 0 })
+        })
+    })
+
+app.get('/callback', ash(async (req, res) => {
     const code = req.query.code || null
     const authOptions = {
         url: 'https://accounts.spotify.com/api/token',
@@ -99,20 +134,72 @@ app.get('/callback', (req, res) => {
         json: true
     }
 
-    request.post(authOptions, (error, response, body) => {
-        if (!error && res.statusCode === 200) {
-            console.log(`access_token: ${body.access_token}`)
-            spotifyApi.setAccessToken(body.access_token)
-            token = body.access_token
-            res.redirect('/')
-            /*             res.cookie('SPOTIFY_ACCESS_TOKEN', body.access_token)
-                        res.cookie('SPOTIFY_REFRESH_TOKEN', body.refresh_token)
-                        res.cookie('SPOTIFY_REFRESH_CODE', code) */
+    const response = await asRequest(authOptions)
+    if (response.ok) {
+        console.log(`access_token: ${response.body.access_token}`)
+        spotifyApi.setAccessToken(response.body.access_token)
+        token = response.body.access_token
+        res.redirect('/')
+        /*             res.cookie('SPOTIFY_ACCESS_TOKEN', body.access_token)
+                    res.cookie('SPOTIFY_REFRESH_TOKEN', body.refresh_token)
+                    res.cookie('SPOTIFY_REFRESH_CODE', code) */
 
-        } else {
-            res.send('error: invalid_token')
-        }
+    } else {
+        res.send('error: invalid_token')
+    }
+}))
+
+function portError(err) {
+    if (err) {
+        console.log('Serial port error:', err.message)
+    }
+}
+
+function toByte(num) {
+    return num & 255
+}
+
+function toWord(num) {
+    return [toByte(num >>> 8), toByte(num)]
+
+}
+
+async function sendToArduino(port) {
+    await updateMusic()
+/*             <p> Next bar in: ${analysis.bars.filter(b => (b.start * 1000 > progress))[0].start * 1000 - progress}
+            <p> Next section in: ${analysis.sections.filter(b => (b.start * 1000 > progress))[0].start * 1000 - progress}
+            <p> Next segment in: ${analysis.segments.filter(b => (b.start * 1000 > progress))[0].start * 1000 - progress}
+            <p> Next tatum in: ${analysis.tatums.filter(b => (b.start * 1000 > progress))[0].start * 1000 - progress}
+            <p> Next beat in: ${analysis.beats.filter(b => (b.start * 1000 > progress))[0].start * 1000 - progress}
+*/
+    const bar = analysis.beats.filter(b => (progress > b.start * 1000)).slice(-1)[0]
+    if (bar) {
+        var nextIn = Math.floor((bar.start + bar.duration) * 1000 - progress)
+        if (nextIn < 0) nextIn = 0
+        var barProg = Math.floor(256*(bar.duration - nextIn/1000)/bar.duration)
+        if (barProg > 255) barProg = 255
+        var msg = [255,255,toByte(Math.floor(analysis.track.tempo))]
+        msg = msg.concat(toWord(Math.floor(progress/10)))
+        msg = msg.concat(toWord(Math.floor(bar.start * 100)))
+        msg = msg.concat(toWord(Math.floor(bar.duration * 100)))
+        port.write(msg)
+    }
+}
+
+app.get('/port/:port', ash(async (req, res)=> {
+    const portList = await SerialPort.list()
+    arduino = portList[req.params.port].path
+    const port = new SerialPort(arduino, {baudRate: 115200}, portError)
+    port.on('error', portError)
+    const parser = port.pipe(new Readline({ delimiter: '\r\n' }))
+    parser.on('data', data => {
+        port.flush()
+        if (data === 'OK')
+            sendToArduino(port).catch(console.log)
+        else
+            console.log('Arduino sent:', data)
     })
-})
+    res.redirect('/')
+}))
 
 app.listen(port, () => console.log('Listening on port ' + port))
