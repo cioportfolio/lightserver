@@ -1,0 +1,63 @@
+<head>
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+
+<body>
+    <a href="/stop">Stop</a>
+    <div id='ports'></div>
+    <div id="details">Not playing</div>
+    <div id="progress"></div>
+    <div id="visualise"></div>
+    <script>
+        const barWidth = (list, prog) => {
+            const ele = list.filter(i => i.start*1000 < prog).slice(-1)[0]
+            var wd = 1
+            if (ele.start + ele.duration > prog/1000)
+                wd = (prog/1000 - ele.start)/ele.duration
+            return `${Math.floor((1-wd)*100*ele.confidence)}%`
+        }
+
+        const bar = (label, prog) => {
+            const bw = barWidth(analysis[label + 's'], prog)
+            return `<div style='border-style: solid;border-width:2px;width: ${bw}'>${label}</div>`
+        }
+
+        var socket = io()
+        var analysis = null
+        window.onload = () => {
+            socket.on('progress', function (p) {
+                document.getElementById('progress').innerHTML = `Progress: ${p}`
+                if (analysis) {
+                    document.getElementById('visualise').innerHTML = `
+                        <p> Tempo: ${analysis.track.tempo}
+                        ${bar('section', p)}
+                        ${bar('bar', p)}
+                        ${bar('beat', p)}
+                    `
+                }
+            })
+            socket.on('details', function (d) {
+                document.getElementById('details').innerHTML = `
+                    <p> Now playing: 
+                    <p> Artist(s): ${d.artists.map(a => a.name).join()}
+                    <p> Track: ${d.name}
+                `
+            })
+            socket.on('analysis', function (a) {
+                analysis = a
+            })
+            socket.on('ports', function (pl) {
+                if (pl.arduino) {
+                    document.getElementById('ports').innerHTML = `Port: ${pl.arduino}`
+                } else {
+                    const portMenu = pl.portList.map((p, i) => `<li><a href="/port/${i}">${p.path}</a> - ${p.manufacturer}</li>`).join('')
+                    document.getElementById('ports').innerHTML = `
+                        <p> Select a serial port:
+                        <ul>${portMenu}</ul>
+                    `
+                }
+            })
+
+        }
+    </script>
+</body>
