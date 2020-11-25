@@ -1,7 +1,7 @@
 version: "2"
 services:
   node:
-    image: "node:12"
+    build: .
     user: "node"
     working_dir: /home/node/app
     environment:
@@ -13,6 +13,8 @@ services:
     ports:
       - "8080:8080"
       - "8001:8001"
+      - "9229:9229"
+    user: root
     command: bash -c "
       npm i
       && npm run start &

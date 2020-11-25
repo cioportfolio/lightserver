@@ -26,9 +26,9 @@ var analysis = null
 var token = ''
 var playing = null
 var progress = 0
-var lastProgress = 0
 var arduino = null
 var apiTime = Date.now()
+var startTime = Date.now()
 var updateTimer
 
 if (process.env.NODE_ENV === 'development') {
@@ -49,15 +49,14 @@ const ash = callback =>
 async function updateMusic(newConnection) {
     const currentTime = Date.now()
     if (currentTime - apiTime < 1000) {
-        progress = currentTime - apiTime + lastProgress
+        progress = currentTime - startTime
         io.emit('progress', progress)
     } else {
         apiTime = currentTime
         const trackData = await spotifyApi.getMyCurrentPlaybackState({})
-        apiTime = (apiTime + Date.now())/2
         playing = trackData.body.item
-        lastProgress = trackData.body.progress_ms
-        progress = lastProgress
+        startTime = currentTime - trackData.body.progress_ms
+        progress = trackData.body.progress_ms
         io.emit('progress', progress)
         if (playing && track_id != playing.id) {
             io.emit('details', playing)
@@ -155,10 +154,6 @@ async function sendToArduino(port) {
     if (analysis) {
         const bar = analysis.beats.filter(b => (progress > b.start * 1000)).slice(-1)[0]
         if (bar) {
-            var nextIn = Math.floor((bar.start + bar.duration) * 1000 - progress)
-            if (nextIn < 0) nextIn = 0
-            var barProg = Math.floor(256 * (bar.duration - nextIn / 1000) / bar.duration)
-            if (barProg > 255) barProg = 255
             var msg = [255, 255, toByte(Math.floor(analysis.track.tempo))]
             msg = msg.concat(toWord(Math.floor(progress / 10)))
             msg = msg.concat(toWord(Math.floor(bar.start * 100)))
