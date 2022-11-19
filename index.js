@@ -1,6 +1,6 @@
 require('dotenv').config()
-const SerialPort = require('serialport')
-const Readline = require('@serialport/parser-readline')
+// const SerialPort = require('serialport')
+// const Readline = require('@serialport/parser-readline')
 const express = require('express')
 const querystring = require('querystring')
 const request = require('request')
@@ -48,7 +48,7 @@ const ash = callback =>
 
 async function updateMusic(newConnection) {
     const currentTime = Date.now()
-    if (currentTime - apiTime < 1000) {
+    if (currentTime - apiTime < 1000 || !token) {
         progress = currentTime - startTime
         io.emit('progress', progress)
     } else {
@@ -163,6 +163,27 @@ async function sendToArduino(port) {
     }
 }
 
+app.get('/ESP', ash(async (req,res)=> {
+    let msg = [0]
+    await updateMusic()
+    /*             <p> Next bar in: ${analysis.bars.filter(b => (b.start * 1000 > progress))[0].start * 1000 - progress}
+                <p> Next section in: ${analysis.sections.filter(b => (b.start * 1000 > progress))[0].start * 1000 - progress}
+                <p> Next segment in: ${analysis.segments.filter(b => (b.start * 1000 > progress))[0].start * 1000 - progress}
+                <p> Next tatum in: ${analysis.tatums.filter(b => (b.start * 1000 > progress))[0].start * 1000 - progress}
+                <p> Next beat in: ${analysis.beats.filter(b => (b.start * 1000 > progress))[0].start * 1000 - progress}
+    */
+    if (analysis) {
+        const bar = analysis.beats.filter(b => (Math.floor(progress / 10) < Math.floor(b.start * 100)))[0]
+        if (bar) {
+            msg = [toByte(Math.floor(analysis.track.tempo))]
+            msg = msg.concat(toWord(Math.floor(progress / 10)))
+            msg = msg.concat(toWord(Math.floor(bar.start * 100)))
+            msg = msg.concat(toWord(Math.floor(bar.duration * 100)))
+        }
+    }
+    res.send(Buffer.from(msg))
+}))
+
 app.get('/port/:port', ash(async (req, res) => {
     const portList = await SerialPort.list()
     arduino = portList[req.params.port].path
@@ -185,7 +206,7 @@ function autoUpdate() {
 }
 
 io.on('connection', async socket => {
-    if (arduino) {
+/*     if (arduino) {
         io.emit('ports', {
             arduino: arduino,
             portList: []
@@ -196,11 +217,11 @@ io.on('connection', async socket => {
             arduino: '',
             portList: portList
         })
-    }
+    } */
     updateMusic('new')
     if (!arduino && !updateTimer)
         console.log('setting update timer')
-        updateTimer = setInterval(autoUpdate, 20)
+        updateTimer = setInterval(autoUpdate, 100)
 })
 
 server.listen(port, () => {

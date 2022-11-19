@@ -18,31 +18,40 @@
             var wd = 1
             if (ele.start + ele.duration > prog/1000)
                 wd = (prog/1000 - ele.start)/ele.duration
-            return (1-wd)
+            return (1-wd*wd*wd)
         }
 
         const bar = (label, prog) => {
             const bw = barWidth(analysis[label + 's'], prog)*100
-            return `<div style='border-style: solid;border-width:2px;width: ${bw}%'>${label}</div>`
+            return `<div style='background: black; color: white; border-style: solid;border-width:2px;width: ${bw}%'>${label}</div>`
         }
 
-        var socket = io()
+        var socket
         var analysis = null
         window.onload = () => {
+            socket = io()
             socket.on('progress', function (p) {
                 document.getElementById('progress').innerHTML = `Progress: ${p}`
                 if (analysis) {
                     const crochet = barWidth(analysis.bars, p)*analysis.track.time_signature % 1
                     const weighting = crochet*crochet-crochet+1
-                    document.getElementById('visualise').innerHTML = `
+/*                    document.getElementById('visualise').innerHTML = `
                         <p> Tempo: ${analysis.track.tempo}
                         <p> Bars: ${analysis.bars.length}
                         ${bar('section', p)}
                         ${bar('bar', p)}
                         <div style='border-style: solid;border-width:2px;width: ${weighting*100}%'>weighting</div>
-                        <div style='border-style: solid;border-width:2px;width: ${barWidth(analysis.beats, p)*weighting*100}%'>beat</div>
+                        <div style='background: black; color: white; border-style: solid;border-width:2px;width: ${barWidth(analysis.beats, p)*weighting*100}%'>beat</div>
                         ${bar('tatum', p)}
-                    `
+                    `*/
+                    document.getElementById('visualise').innerHTML = `
+                        <p> Tempo: ${analysis.track.tempo}
+                        <p> Bars: ${analysis.bars.length}
+                            ${bar('section', p)}
+                        ${bar('bar', p)}
+                        <div style='border-style: solid;border-width:2px;width: ${weighting*100}%'>weighting</div>
+                        <div style='background: black;width: ${barWidth(analysis.beats, p)*100}%'>beat</div>
+                        `
                 }
             })
             socket.on('details', function (d) {
