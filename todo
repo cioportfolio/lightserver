@@ -1,0 +1,3 @@
+set timer when brightness slider moved
+reset timer when brightness slider moved
+send brightness when timer expires
