@@ -16,6 +16,9 @@ If not browse to localhost:8001 and log in to spotify. The server will then cont
 **KEEP THE REFRESH TOKEN SECRET. DON'T SAVE IT IN A PUBLIC REPOSITORY**
 
 When the server is running:
-host-op:8001/ will show a simple page of track details and a simple beat animation
-host-ip:8001/progress will provide raw track and progress
-host0ip:8001/analysis will provide simplified lists of bars, beats and tatums for the playing track
+
+- host-ip:8001/ will show a simple page of track details and a simple beat animation
+- host-ip:8001/progress will provide raw track and progress
+- host-ip:8001/analysis will provide simplified lists of bars, beats and tatums for the playing track
+
+For an example of how to use the /progress and /analysis APIs see https://github.com/cioportfolio/partyrings
